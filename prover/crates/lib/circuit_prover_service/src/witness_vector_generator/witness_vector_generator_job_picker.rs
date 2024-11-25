@@ -118,7 +118,10 @@ impl<ML: WitnessVectorMetadataLoader> JobPicker for WitnessVectorGeneratorJobPic
             .await
             .context("failed to get db connection")?;
         let metadata = match self.metadata_loader.load_metadata(connection).await {
-            None => return Ok(None),
+            None => {
+                tracing::info!("No metadata found");
+                return Ok(None);
+            }
             Some(metadata) => metadata,
         };
 

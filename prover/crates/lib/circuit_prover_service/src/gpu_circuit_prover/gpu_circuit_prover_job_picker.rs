@@ -90,3 +90,4 @@ impl JobPicker for GpuCircuitProverJobPicker {
         Ok(Some((payload, metadata)))
     }
 }
+

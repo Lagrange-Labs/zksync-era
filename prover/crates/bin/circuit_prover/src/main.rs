@@ -9,7 +9,7 @@ use clap::Parser;
 use shivini::{ProverContext, ProverContextConfig};
 use tokio_util::sync::CancellationToken;
 use zksync_circuit_prover::{FinalizationHintsCache, SetupDataCache, PROVER_BINARY_METRICS};
-use zksync_circuit_prover_service::job_runner::{circuit_prover_runner, WvgRunnerBuilder};
+use zksync_circuit_prover_service::job_runner::{proxy_prover_runner, WvgRunnerBuilder};
 use zksync_config::{
     configs::{FriProverConfig, ObservabilityConfig},
     ObjectStoreConfig,
@@ -27,7 +27,7 @@ use zksync_vlog::prometheus::PrometheusExporterConfig;
 /// Typical setup is ~25 WVGs & 1 GPU.
 /// Worst case scenario, you just picked all 25 WVGs (so you need 30 seconds to finish)
 /// and another 25 for the GPU.
-const GRACEFUL_SHUTDOWN_DURATION: Duration = Duration::from_secs(55);
+const GRACEFUL_SHUTDOWN_DURATION: Duration = Duration::from_secs(5);
 
 /// With current setup, only a single job is expected to be in flight.
 /// This guarantees memory consumption is going to be fixed (1 job in memory, no more).
@@ -50,7 +50,7 @@ struct Cli {
     light_wvg_count: usize,
     /// Number of heavy witness vector generators to run in parallel.
     /// Corresponds to 1 CPU thread & ~9GB of RAM.
-    #[arg(short = 'h', long, default_value_t = 1)]
+    #[arg(short = 'H', long, default_value_t = 1)]
     heavy_wvg_count: usize,
     /// Max VRAM to allocate. Useful if you want to limit the size of VRAM used.
     /// None corresponds to allocating all available VRAM.
@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
         .install()
         .context("failed to install observability")?;
 
-    let (connection_pool, object_store, prover_context, setup_data_cache, hints) = load_resources(
+    let (connection_pool, object_store, setup_data_cache, hints) = load_resources(
         opt.secrets_path,
         opt.max_allocation,
         object_store_config,
@@ -114,15 +114,13 @@ async fn main() -> anyhow::Result<()> {
     // necessary as it has a connection_pool which will keep 1 connection active by default
     drop(builder);
 
-    let circuit_prover_runner = circuit_prover_runner(
+    let circuit_prover_runner = proxy_prover_runner(
         connection_pool,
         object_store,
         PROVER_PROTOCOL_SEMANTIC_VERSION,
         setup_data_cache,
         witness_vector_receiver,
-        prover_context,
     );
-
     tasks.extend(circuit_prover_runner.run());
 
     let mut tasks = ManagedTasks::new(tasks);
@@ -188,7 +186,7 @@ async fn load_resources(
 ) -> anyhow::Result<(
     ConnectionPool<Prover>,
     Arc<dyn ObjectStore>,
-    ProverContext,
+    // ProverContext,
     SetupDataCache,
     FinalizationHintsCache,
 )> {
@@ -209,13 +207,13 @@ async fn load_resources(
         .await
         .context("failed to create object store")?;
 
-    let prover_context = match max_gpu_vram_allocation {
-        Some(max_allocation) => ProverContext::create_with_config(
-            ProverContextConfig::default().with_maximum_device_allocation(max_allocation),
-        )
-        .context("failed initializing fixed gpu prover context")?,
-        None => ProverContext::create().context("failed initializing gpu prover context")?,
-    };
+    // let prover_context = match max_gpu_vram_allocation {
+    //     Some(max_allocation) => ProverContext::create_with_config(
+    //         ProverContextConfig::default().with_maximum_device_allocation(max_allocation),
+    //     )
+    //     .context("failed initializing fixed gpu prover context")?,
+    //     None => ProverContext::create().context("failed initializing gpu prover context")?,
+    // };
 
     tracing::info!("Loading setup data from disk...");
 
@@ -236,7 +234,7 @@ async fn load_resources(
     Ok((
         connection_pool,
         object_store,
-        prover_context,
+        // prover_context,
         setup_data_cache,
         finalization_hints,
     ))
