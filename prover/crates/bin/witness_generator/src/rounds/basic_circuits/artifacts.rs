@@ -25,7 +25,10 @@ impl ArtifactsManager for BasicCircuits {
         object_store: &dyn ObjectStore,
     ) -> anyhow::Result<Self::InputArtifacts> {
         let l1_batch_number = *metadata;
-        let data = object_store.get(l1_batch_number).await.unwrap();
+        let data = object_store
+            .get(l1_batch_number)
+            .await
+            .expect(&format!("failed to get store data for {l1_batch_number}"));
         Ok(BasicWitnessGeneratorJob {
             block_number: l1_batch_number,
             data,

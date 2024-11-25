@@ -190,10 +190,10 @@ impl FriProverDal<'_, '_> {
             prover_jobs_fri.depth,
             prover_jobs_fri.is_node_final_proof
             "#,
-            protocol_version.minor as i32,
-            protocol_version.patch.0 as i32,
+            dbg!(protocol_version.minor as i32) as i32,
+            dbg!(protocol_version.patch.0 as i32) as i32,
             picked_by,
-            AggregationRound::NodeAggregation as i64
+            dbg!(AggregationRound::NodeAggregation as i64) as i64
         )
         .fetch_optional(self.storage.conn())
         .await

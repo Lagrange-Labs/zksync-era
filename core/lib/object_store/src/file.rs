@@ -59,7 +59,7 @@ impl FileBackedObjectStore {
 impl ObjectStore for FileBackedObjectStore {
     async fn get_raw(&self, bucket: Bucket, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
         let filename = self.filename(bucket, key);
-        fs::read(filename).await.map_err(From::from)
+        fs::read(dbg!(filename)).await.map_err(From::from)
     }
 
     async fn put_raw(
