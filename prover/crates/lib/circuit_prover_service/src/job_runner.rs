@@ -148,13 +148,18 @@ pub fn circuit_prover_runner(
 }
 
 pub struct ProxyExecutor {
-    lpn_gateway_connection: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+    lpn_gateway_connection_tx: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+    lpn_gateway_connection_rx: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
 }
 
 impl ProxyExecutor {
-    pub fn new(lpn_gateway_connection: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>) -> Self {
+    pub fn new(
+        lpn_gateway_connection_tx: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+        lpn_gateway_connection_rx: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
+    ) -> Self {
         Self {
-            lpn_gateway_connection,
+            lpn_gateway_connection_tx,
+            lpn_gateway_connection_rx,
         }
     }
 }
@@ -181,7 +186,7 @@ impl Executor for ProxyExecutor {
 
         let serialized = serde_json::to_string(&work)?;
 
-        self.lpn_gateway_connection
+        self.lpn_gateway_connection_tx
             .blocking_send(lagrange_grpc::SubmitTaskRequest {
                 request: Some(lagrange_grpc::submit_task_request::Request::Task(
                     serialized,
@@ -386,12 +391,13 @@ pub fn proxy_prover_runner(
     setup_data_cache: HashMap<ProverServiceDataKey, Arc<GoldilocksGpuProverSetupData>>,
     receiver: mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
     grpc_sender: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+    grpc_receiver: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
 ) -> JobRunner<ProxyExecutor, ProxyCircuitProverJobPicker, ProxyCircuitProverJobSaver> {
     let job_picker = ProxyCircuitProverJobPicker::new(receiver, setup_data_cache);
     let job_saver =
         ProxyCircuitProverJobSaver::new(connection_pool, object_store, protocol_version);
     JobRunner::new(
-        ProxyExecutor::new(grpc_sender),
+        ProxyExecutor::new(grpc_sender, grpc_receiver),
         job_picker,
         job_saver,
         1,

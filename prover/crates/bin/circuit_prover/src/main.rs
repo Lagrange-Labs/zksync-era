@@ -58,6 +58,10 @@ struct Cli {
     /// None corresponds to allocating all available VRAM.
     #[arg(short = 'm', long)]
     pub(crate) max_allocation: Option<usize>,
+
+    /// Address of the remote address of LPN gateway
+    #[arg(long)]
+    pub(crate) lpn_gateway_uri: String,
 }
 
 #[tokio::main]
@@ -117,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     drop(builder);
 
     let max_message_size = 64 * 1024 * 1024;
-    let channel = tonic::transport::Channel::builder("http://localhost:10000".parse().unwrap())
+    let channel = tonic::transport::Channel::builder(opt.lpn_gateway_uri.parse().unwrap())
         .connect()
         .await?;
 
@@ -126,6 +130,8 @@ async fn main() -> anyhow::Result<()> {
         .max_encoding_message_size(max_message_size);
 
     let (outbound_tx, outbound_rx) = tokio::sync::mpsc::channel(1024);
+    let (inbound_tx, inbound_rx) = tokio::sync::mpsc::channel(1024);
+
     let outbound_rx = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
 
     let response = client
@@ -133,9 +139,15 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to open stream from query executor to the gateway")?;
 
-    // TODO: wire the from_gateway channel with responses
-    let from_gateway = response.into_inner();
+    let mut from_gateway = response.into_inner();
 
+    use futures::stream::StreamExt;
+    tasks.push(tokio::spawn(async move {
+        while let Some(msg) = from_gateway.next().await {
+            inbound_tx.send(msg.unwrap()).await.unwrap();
+        }
+        Ok(())
+    }));
     let circuit_prover_runner = proxy_prover_runner(
         connection_pool,
         object_store,
@@ -143,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         setup_data_cache,
         witness_vector_receiver,
         outbound_tx,
+        inbound_rx,
     );
     tasks.extend(circuit_prover_runner.run());
 
