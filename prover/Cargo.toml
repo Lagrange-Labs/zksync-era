@@ -96,6 +96,14 @@ zksync_prover_job_processor = { path = "crates/lib/prover_job_processor" }
 zksync_circuit_prover_service = { path = "crates/lib/circuit_prover_service" }
 zksync_prover_job_monitor = { path = "crates/bin/prover_job_monitor" }
 
+# LPN related additions
+miette = "7.2.0"
+protox = "0.7.1"
+tonic-build = "0.12.3"
+tonic = "0.12.3"
+prost = "0.13.3"
+prost-types = "0.13.3"
+
 # for `perf` profiling
 [profile.perf]
 inherits = "release"

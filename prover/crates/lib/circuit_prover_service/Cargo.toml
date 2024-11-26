@@ -29,3 +29,15 @@ shivini = { workspace = true, features = [
 ] }
 zkevm_test_harness.workspace = true
 vise.workspace = true
+
+# LPN dependencies
+serde = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+miette = { workspace = true, features = ["fancy"] }
+protox = { workspace = true }
+tonic-build = { workspace = true }

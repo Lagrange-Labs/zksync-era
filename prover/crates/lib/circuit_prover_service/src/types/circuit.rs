@@ -41,6 +41,7 @@ type Proof = CryptoProof<Field, Hasher, Extension>;
 /// Circuits are hydrated on the flight where necessary.
 // TODO: This enum will be merged with CircuitWrapper once BWG changes are done.
 #[allow(clippy::large_enum_variant)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum Circuit {
     Base(ZkSyncBaseLayerCircuit),
     Recursive(ZkSyncRecursiveLayerCircuit),

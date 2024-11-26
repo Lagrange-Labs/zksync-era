@@ -9,7 +9,9 @@ use clap::Parser;
 use shivini::{ProverContext, ProverContextConfig};
 use tokio_util::sync::CancellationToken;
 use zksync_circuit_prover::{FinalizationHintsCache, SetupDataCache, PROVER_BINARY_METRICS};
-use zksync_circuit_prover_service::job_runner::{proxy_prover_runner, WvgRunnerBuilder};
+use zksync_circuit_prover_service::job_runner::{
+    lagrange_grpc, proxy_prover_runner, WvgRunnerBuilder,
+};
 use zksync_config::{
     configs::{FriProverConfig, ObservabilityConfig},
     ObjectStoreConfig,
@@ -114,12 +116,33 @@ async fn main() -> anyhow::Result<()> {
     // necessary as it has a connection_pool which will keep 1 connection active by default
     drop(builder);
 
+    let max_message_size = 64 * 1024 * 1024;
+    let channel = tonic::transport::Channel::builder("http://localhost:10000".parse().unwrap())
+        .connect()
+        .await?;
+
+    let mut client = lagrange_grpc::clients_service_client::ClientsServiceClient::new(channel)
+        .max_decoding_message_size(max_message_size)
+        .max_encoding_message_size(max_message_size);
+
+    let (outbound_tx, outbound_rx) = tokio::sync::mpsc::channel(1024);
+    let outbound_rx = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
+
+    let response = client
+        .client_to_gw(tonic::Request::new(outbound_rx))
+        .await
+        .context("failed to open stream from query executor to the gateway")?;
+
+    // TODO: wire the from_gateway channel with responses
+    let from_gateway = response.into_inner();
+
     let circuit_prover_runner = proxy_prover_runner(
         connection_pool,
         object_store,
         PROVER_PROTOCOL_SEMANTIC_VERSION,
         setup_data_cache,
         witness_vector_receiver,
+        outbound_tx,
     );
     tasks.extend(circuit_prover_runner.run());
 

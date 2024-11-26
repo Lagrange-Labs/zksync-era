@@ -506,6 +506,7 @@ impl Distribution<configs::FriProverConfig> for EncodeDist {
             prover_object_store: self.sample(rng),
             public_object_store: self.sample(rng),
             cloud_type: self.sample(rng),
+            lpn_gateway_url: None,
         }
     }
 }
