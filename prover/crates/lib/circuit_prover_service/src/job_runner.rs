@@ -1,27 +1,27 @@
 use std::{collections::HashMap, sync::Arc};
 
+use crate::metrics::CIRCUIT_PROVER_METRICS;
+use crate::types::circuit_prover_payload::GpuCircuitProverPayload;
+use anyhow::Context;
+use async_trait::async_trait;
 use shivini::ProverContext;
+use std::time::Instant;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use zksync_object_store::ObjectStore;
+use zksync_prover_dal::ProverDal;
 use zksync_prover_dal::{ConnectionPool, Prover};
+use zksync_prover_fri_types::FriProofWrapper;
 use zksync_prover_fri_types::{
     circuit_definitions::boojum::cs::implementations::setup::FinalizationHintsForProver,
     get_current_pod_name, ProverServiceDataKey,
 };
+use zksync_prover_job_processor::Executor;
+use zksync_prover_job_processor::JobPicker;
+use zksync_prover_job_processor::JobSaver;
 use zksync_prover_job_processor::{Backoff, BackoffAndCancellable, JobRunner};
 use zksync_prover_keystore::GoldilocksGpuProverSetupData;
 use zksync_types::{protocol_version::ProtocolSemanticVersion, prover_dal::FriProverJobMetadata};
-use zksync_prover_job_processor::Executor;
-use crate::types::circuit_prover_payload::GpuCircuitProverPayload;
-use zksync_prover_fri_types::FriProofWrapper;
-use async_trait::async_trait;
-use std::time::Instant;
-use zksync_prover_job_processor::JobPicker;
-use zksync_prover_job_processor::JobSaver;
-use crate::metrics::CIRCUIT_PROVER_METRICS;
-use anyhow::Context;
-use zksync_prover_dal::ProverDal;
-
 
 use crate::{
     gpu_circuit_prover::{
@@ -42,8 +42,7 @@ pub struct WvgRunnerBuilder {
     object_store: Arc<dyn ObjectStore>,
     protocol_version: ProtocolSemanticVersion,
     finalization_hints_cache: HashMap<ProverServiceDataKey, Arc<FinalizationHintsForProver>>,
-    sender:
-        tokio::sync::mpsc::Sender<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
+    sender: mpsc::Sender<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
     cancellation_token: CancellationToken,
     pod_name: String,
 }
@@ -54,10 +53,7 @@ impl WvgRunnerBuilder {
         object_store: Arc<dyn ObjectStore>,
         protocol_version: ProtocolSemanticVersion,
         finalization_hints_cache: HashMap<ProverServiceDataKey, Arc<FinalizationHintsForProver>>,
-        sender: tokio::sync::mpsc::Sender<(
-            WitnessVectorGeneratorExecutionOutput,
-            FriProverJobMetadata,
-        )>,
+        sender: mpsc::Sender<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
         cancellation_token: CancellationToken,
     ) -> Self {
         Self {
@@ -142,10 +138,7 @@ pub fn circuit_prover_runner(
     object_store: Arc<dyn ObjectStore>,
     protocol_version: ProtocolSemanticVersion,
     setup_data_cache: HashMap<ProverServiceDataKey, Arc<GoldilocksGpuProverSetupData>>,
-    receiver: tokio::sync::mpsc::Receiver<(
-        WitnessVectorGeneratorExecutionOutput,
-        FriProverJobMetadata,
-    )>,
+    receiver: mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
     prover_context: ProverContext,
 ) -> JobRunner<GpuCircuitProverExecutor, GpuCircuitProverJobPicker, GpuCircuitProverJobSaver> {
     let executor = GpuCircuitProverExecutor::new(prover_context);
@@ -154,7 +147,31 @@ pub fn circuit_prover_runner(
     JobRunner::new(executor, job_picker, job_saver, 1, None)
 }
 
-pub struct ProxyExecutor;
+pub struct ProxyExecutor {
+    lpn_gateway_connection_tx: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+    lpn_gateway_connection_rx: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
+}
+
+impl ProxyExecutor {
+    pub fn new(
+        lpn_gateway_connection_tx: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+        lpn_gateway_connection_rx: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
+    ) -> Self {
+        Self {
+            lpn_gateway_connection_tx,
+            lpn_gateway_connection_rx,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum LPNWork {
+    CircuitProverTask {
+        input: GpuCircuitProverPayload,
+        metadata: FriProverJobMetadata,
+    },
+}
+
 impl Executor for ProxyExecutor {
     type Input = GpuCircuitProverPayload;
     type Output = FriProofWrapper;
@@ -165,24 +182,31 @@ impl Executor for ProxyExecutor {
         input: Self::Input,
         metadata: Self::Metadata,
     ) -> anyhow::Result<Self::Output> {
-        println!("Je devrais faire des trucs lololol!");
-        anyhow::bail!("Bah non")
+        let work = LPNWork::CircuitProverTask { input, metadata };
+
+        let serialized = serde_json::to_string(&work)?;
+
+        self.lpn_gateway_connection_tx
+            .blocking_send(lagrange_grpc::SubmitTaskRequest {
+                request: Some(lagrange_grpc::submit_task_request::Request::Task(
+                    serialized,
+                )),
+            })
+            .unwrap();
+
+        anyhow::bail!("bis später");
     }
 }
 
 #[derive(Debug)]
 pub struct ProxyCircuitProverJobPicker {
-    receiver:
-        tokio::sync::mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
+    receiver: mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
     setup_data_cache: HashMap<ProverServiceDataKey, Arc<GoldilocksGpuProverSetupData>>,
 }
 
 impl ProxyCircuitProverJobPicker {
     pub fn new(
-        receiver: tokio::sync::mpsc::Receiver<(
-            WitnessVectorGeneratorExecutionOutput,
-            FriProverJobMetadata,
-        )>,
+        receiver: mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
         setup_data_cache: HashMap<ProverServiceDataKey, Arc<GoldilocksGpuProverSetupData>>,
     ) -> Self {
         Self {
@@ -230,6 +254,7 @@ impl JobPicker for ProxyCircuitProverJobPicker {
         };
         tracing::info!(
             "Finished picking gpu circuit prover job {}, on batch {}, for circuit {}, at round {} in {:?}",
+
             metadata.id,
             metadata.block_number,
             metadata.circuit_id,
@@ -261,6 +286,10 @@ impl ProxyCircuitProverJobSaver {
             protocol_version,
         }
     }
+}
+
+pub mod lagrange_grpc {
+    tonic::include_proto!("lagrange");
 }
 
 #[async_trait]
@@ -360,12 +389,18 @@ pub fn proxy_prover_runner(
     object_store: Arc<dyn ObjectStore>,
     protocol_version: ProtocolSemanticVersion,
     setup_data_cache: HashMap<ProverServiceDataKey, Arc<GoldilocksGpuProverSetupData>>,
-    receiver: tokio::sync::mpsc::Receiver<(
-        WitnessVectorGeneratorExecutionOutput,
-        FriProverJobMetadata,
-    )>,
+    receiver: mpsc::Receiver<(WitnessVectorGeneratorExecutionOutput, FriProverJobMetadata)>,
+    grpc_sender: mpsc::Sender<lagrange_grpc::SubmitTaskRequest>,
+    grpc_receiver: mpsc::Receiver<lagrange_grpc::SubmitTaskResponse>,
 ) -> JobRunner<ProxyExecutor, ProxyCircuitProverJobPicker, ProxyCircuitProverJobSaver> {
     let job_picker = ProxyCircuitProverJobPicker::new(receiver, setup_data_cache);
-    let job_saver = ProxyCircuitProverJobSaver::new(connection_pool, object_store, protocol_version);
-    JobRunner::new(ProxyExecutor, job_picker, job_saver, 1, None)
+    let job_saver =
+        ProxyCircuitProverJobSaver::new(connection_pool, object_store, protocol_version);
+    JobRunner::new(
+        ProxyExecutor::new(grpc_sender, grpc_receiver),
+        job_picker,
+        job_saver,
+        1,
+        None,
+    )
 }

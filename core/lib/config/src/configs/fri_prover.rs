@@ -44,6 +44,7 @@ pub struct FriProverConfig {
     pub public_object_store: Option<ObjectStoreConfig>,
     #[serde(default)]
     pub cloud_type: CloudConnectionMode,
+    pub lpn_gateway_url: Option<String>,
 }
 
 impl FriProverConfig {

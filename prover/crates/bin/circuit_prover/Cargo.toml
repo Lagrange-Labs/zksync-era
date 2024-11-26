@@ -41,3 +41,14 @@ shivini = { workspace = true, features = [
     "zksync",
 ] }
 zkevm_test_harness.workspace = true
+
+# LPN dependencies
+futures = { workspace = true }
+tonic = { workspace = true }
+tokio-stream = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+miette = { workspace = true, features = ["fancy"] }
+protox = { workspace = true }
+tonic-build = { workspace = true }

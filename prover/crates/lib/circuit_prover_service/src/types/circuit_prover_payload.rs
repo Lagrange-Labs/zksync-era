@@ -8,6 +8,7 @@ use zksync_prover_keystore::GoldilocksGpuProverSetupData;
 use crate::types::circuit::Circuit;
 
 /// Payload used as input for GPU circuit prover.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GpuCircuitProverPayload {
     pub circuit: Circuit,
     pub witness_vector: WitnessVec<GoldilocksField>,

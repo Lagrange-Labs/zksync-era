@@ -367,6 +367,7 @@ impl ProtoRepr for proto::Prover {
                 .context("cloud_type")?
                 .map(|x| x.parse())
                 .unwrap_or_default(),
+            lpn_gateway_url: None,
         })
     }
 

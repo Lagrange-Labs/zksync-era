@@ -9,7 +9,7 @@ use crate::{
     basic_fri_types::AggregationRound, protocol_version::ProtocolVersionId, L1BatchNumber,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct FriProverJobMetadata {
     pub id: u32,
     pub block_number: L1BatchNumber,
@@ -18,6 +18,7 @@ pub struct FriProverJobMetadata {
     pub sequence_number: usize,
     pub depth: u16,
     pub is_node_final_proof: bool,
+    #[serde(skip_serializing, skip_deserializing, default = "Instant::now")]
     pub pick_time: Instant,
 }
 
