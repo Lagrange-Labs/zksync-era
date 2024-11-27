@@ -4,6 +4,7 @@ use crate::metrics::CIRCUIT_PROVER_METRICS;
 use crate::types::circuit_prover_payload::GpuCircuitProverPayload;
 use anyhow::Context;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use shivini::ProverContext;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -164,6 +165,37 @@ impl ProxyExecutor {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct MessageEnvelope<T> {
+    pub query_id: String,
+    pub task_id: String,
+    pub db_task_id: Option<i32>,
+    pub rtt: u64,
+    pub gas: Option<u64>,
+    pub routing_key: RoutingKey,
+
+    pub inner: T,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TaskType {
+    Flat(Vec<u8>),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct RoutingKey {
+    domain: String,
+    priority: u64,
+}
+impl RoutingKey {
+    fn default() -> Self {
+        RoutingKey {
+            domain: "sp".into(),
+            priority: 2,
+        }
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum LPNWork {
     CircuitProverTask {
@@ -184,14 +216,29 @@ impl Executor for ProxyExecutor {
     ) -> anyhow::Result<Self::Output> {
         let work = LPNWork::CircuitProverTask { input, metadata };
 
-        let serialized = serde_json::to_string(&work)?;
+        let task = MessageEnvelope::<TaskType> {
+            query_id: String::new(),
+            task_id: format!(
+                "id: {}, block: {}, circuit: {}, round: {}",
+                metadata.id, metadata.block_number, metadata.circuit_id, metadata.aggregation_round
+            ),
+            db_task_id: Some(5),
+            rtt: 13,
+            gas: None,
+            routing_key: RoutingKey::default(),
+            inner: TaskType::Flat(Vec::new()),
+        };
+        let serialized = serde_json::to_string(&task)?;
+        tracing::info!("Sending Task: {}B", serialized.len());
+
+        let envelope = lagrange_grpc::SubmitTaskRequest {
+            request: Some(lagrange_grpc::submit_task_request::Request::Task(
+                serialized,
+            )),
+        };
 
         self.lpn_gateway_connection_tx
-            .blocking_send(lagrange_grpc::SubmitTaskRequest {
-                request: Some(lagrange_grpc::submit_task_request::Request::Task(
-                    serialized,
-                )),
-            })
+            .blocking_send(envelope)
             .unwrap();
 
         anyhow::bail!("bis später");
