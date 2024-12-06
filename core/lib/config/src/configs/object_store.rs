@@ -38,14 +38,16 @@ pub enum ObjectStoreMode {
         gcs_credential_file_path: String,
     },
     S3FromEnv {
-        bucket: String,
+        endpoint: Option<String>,
         region: String,
+        bucket: String,
     },
     S3WithCredentials {
+        endpoint: Option<String>,
+        region: String,
+        bucket: String,
         access_key: String,
         secret_key: String,
-        bucket: String,
-        region: String,
     },
     FileBacked {
         file_backed_base_path: String,

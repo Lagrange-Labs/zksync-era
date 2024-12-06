@@ -11,11 +11,27 @@ pub struct S3Store {
     bucket: Box<S3Bucket>,
 }
 
+fn parse_region(endpoint: Option<&String>, region: &str) -> Result<Region, ObjectStoreError> {
+    match endpoint {
+        Some(endpoint) => Ok(Region::Custom {
+            endpoint: dbg!(endpoint).to_owned(),
+            region: dbg!(region).to_owned(),
+        }),
+        None => region
+            .parse()
+            .map_err(|e| ObjectStoreError::Initialization {
+                source: Box::new(e),
+                is_retriable: false,
+            }),
+    }
+}
+
 impl S3Store {
     /// Initialize and S3-backed [`ObjectStore`] from the provided credentials.
     pub async fn from_keys(
-        bucket: String,
+        endpoint: Option<String>,
         region: String,
+        bucket: String,
         access_key: &str,
         secret_key: &str,
     ) -> Result<Self, ObjectStoreError> {
@@ -24,12 +40,7 @@ impl S3Store {
                 source: Box::new(e),
                 is_retriable: false,
             })?;
-        let region: Region = region
-            .parse()
-            .map_err(|e| ObjectStoreError::Initialization {
-                source: Box::new(e),
-                is_retriable: false,
-            })?;
+        let region = parse_region(endpoint.as_ref(), &region)?;
         let bucket =
             S3Bucket::new(bucket.as_str(), region.clone(), creds.clone()).map_err(|e| {
                 ObjectStoreError::Other {
@@ -43,19 +54,18 @@ impl S3Store {
 
     /// Initialize an S3-backed [`ObjectStore`] from the credentials stored in
     /// `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
-    pub async fn from_env(bucket: String, region: String) -> Result<Self, ObjectStoreError> {
+    pub async fn from_env(
+        endpoint: Option<String>,
+        region: String,
+        bucket: String,
+    ) -> Result<Self, ObjectStoreError> {
         let creds = Credentials::new(None, None, None, None, None).map_err(|e| {
             ObjectStoreError::Initialization {
                 source: Box::new(e),
                 is_retriable: false,
             }
         })?;
-        let region: Region = region
-            .parse()
-            .map_err(|e| ObjectStoreError::Initialization {
-                source: Box::new(e),
-                is_retriable: false,
-            })?;
+        let region = parse_region(endpoint.as_ref(), &region)?;
         let bucket =
             S3Bucket::new(bucket.as_str(), region.clone(), creds.clone()).map_err(|e| {
                 ObjectStoreError::Other {
@@ -99,8 +109,21 @@ impl From<S3Error> for ObjectStoreError {
                 is_retriable: false,
             },
             S3Error::SerdeError(serde_err) => ObjectStoreError::Serialization(Box::new(serde_err)),
-            S3Error::Http(_http_err) => todo!(),
-            S3Error::Io(_) | S3Error::Hyper(_) => todo!(),
+            S3Error::Http(e) => ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: false,
+            },
+            S3Error::Io(e) => ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: true,
+            },
+            S3Error::Hyper(e) => {
+                let is_retriable = e.is_timeout();
+                ObjectStoreError::Other {
+                    source: Box::new(e),
+                    is_retriable,
+                }
+            }
             _ => todo!(),
         }
     }

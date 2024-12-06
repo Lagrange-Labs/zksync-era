@@ -21,15 +21,17 @@ message ObjectStore {
   }
 
   message S3Env {
-    optional string bucket = 1;
+    optional string endpoint = 1;
     optional string region = 2;
+    optional string bucket = 3;
   }
 
   message S3Credentials {
-    optional string bucket = 1;
+    optional string endpoint = 1;
     optional string region = 2;
-    optional string access_key = 3;
-    optional string secret_key = 4;
+    optional string bucket = 3;
+    optional string access_key = 4;
+    optional string secret_key = 5;
   }
 
   oneof mode {

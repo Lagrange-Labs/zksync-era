@@ -112,23 +112,33 @@ impl ObjectStoreFactory {
                 }
                 Ok(Arc::new(store))
             }
-            ObjectStoreMode::S3FromEnv { bucket, region } => {
+            ObjectStoreMode::S3FromEnv {
+                endpoint,
+                region,
+                bucket,
+            } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
-                    S3Store::from_env(bucket.to_owned().into(), region.to_owned())
+                    S3Store::from_env(
+                        endpoint.clone(),
+                        bucket.to_owned().into(),
+                        region.to_owned(),
+                    )
                 })
                 .await?;
                 Self::wrap_mirroring(store, config.local_mirror_path.as_ref()).await
             }
             ObjectStoreMode::S3WithCredentials {
+                endpoint,
+                region,
+                bucket,
                 access_key,
                 secret_key,
-                bucket,
-                region,
             } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
                     S3Store::from_keys(
-                        bucket.to_owned().into(),
+                        endpoint.clone(),
                         region.to_owned(),
+                        bucket.to_owned().into(),
                         &access_key,
                         &secret_key,
                     )
