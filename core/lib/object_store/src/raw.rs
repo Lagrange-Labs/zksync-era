@@ -133,6 +133,21 @@ pub enum PreparedLink {
     /// An URI on the local filesystem
     Local(String),
 }
+impl PreparedLink {
+    pub fn as_url(&self) -> Option<&str> {
+        match self {
+            PreparedLink::Url(url) => Some(url),
+            PreparedLink::Local(_) => None,
+        }
+    }
+
+    pub fn as_file(&self) -> Option<&str> {
+        match self {
+            PreparedLink::Url(_) => None,
+            PreparedLink::Local(file) => Some(file),
+        }
+    }
+}
 
 /// Functionality to fetch and store byte blobs from an object store (AWS S3, Google Cloud Storage,
 /// Azure Blobstore etc).

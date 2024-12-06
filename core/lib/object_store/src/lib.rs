@@ -48,6 +48,6 @@ pub use self::{
     gcs::{GoogleCloudStore, GoogleCloudStoreAuthMode},
     mock::MockObjectStore,
     objects::StoredObject,
-    raw::{Bucket, ObjectStore, ObjectStoreError},
+    raw::{Bucket, ObjectStore, ObjectStoreError, PreparedLink},
     s3::S3Store,
 };
