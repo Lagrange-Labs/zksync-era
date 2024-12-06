@@ -1,127 +1,98 @@
-use async_trait::async_trait;
-use s3::creds::Credentials;
-use s3::error::S3Error;
-use s3::{bucket::Bucket as S3Bucket, Region};
-
 use crate::raw::{PreparedLink, PREPARED_LINKS_EXPIRATION};
 use crate::{Bucket, ObjectStore, ObjectStoreError};
+use async_trait::async_trait;
+use http::Method;
+use object_store::signer::Signer;
+use object_store::ObjectStore as _;
+use object_store::{
+    aws::{AmazonS3, AmazonS3Builder},
+    path::Path,
+};
 
 #[derive(Debug)]
 pub struct S3Store {
-    bucket: Box<S3Bucket>,
-}
-
-fn parse_region(endpoint: Option<&String>, region: &str) -> Result<Region, ObjectStoreError> {
-    match endpoint {
-        Some(endpoint) => Ok(Region::Custom {
-            endpoint: dbg!(endpoint).to_owned(),
-            region: dbg!(region).to_owned(),
-        }),
-        None => region
-            .parse()
-            .map_err(|e| ObjectStoreError::Initialization {
-                source: Box::new(e),
-                is_retriable: false,
-            }),
-    }
+    s3: AmazonS3,
 }
 
 impl S3Store {
     /// Initialize and S3-backed [`ObjectStore`] from the provided credentials.
     pub async fn from_keys(
         endpoint: Option<String>,
-        region: String,
-        bucket: String,
+        region: &str,
+        bucket: &str,
         access_key: &str,
         secret_key: &str,
     ) -> Result<Self, ObjectStoreError> {
-        let creds = Credentials::new(Some(access_key), Some(secret_key), None, None, None)
-            .map_err(|e| ObjectStoreError::Initialization {
-                source: Box::new(e),
-                is_retriable: false,
-            })?;
-        let region = parse_region(endpoint.as_ref(), &region)?;
-        let bucket =
-            S3Bucket::new(bucket.as_str(), region.clone(), creds.clone()).map_err(|e| {
-                ObjectStoreError::Other {
-                    source: Box::new(e),
-                    is_retriable: false,
-                }
-            })?;
+        let mut s3_builder = AmazonS3Builder::new()
+            .with_region(region)
+            .with_bucket_name(bucket)
+            .with_access_key_id(access_key)
+            .with_secret_access_key(secret_key);
+        if let Some(endpoint) = endpoint {
+            s3_builder = s3_builder.with_endpoint(endpoint);
+        }
 
-        Ok(Self { bucket })
+        Ok(Self {
+            s3: s3_builder.build().map_err(|e| ObjectStoreError::from(e))?,
+        })
     }
 
     /// Initialize an S3-backed [`ObjectStore`] from the credentials stored in
     /// `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
     pub async fn from_env(
         endpoint: Option<String>,
-        region: String,
-        bucket: String,
+        region: &str,
+        bucket: &str,
     ) -> Result<Self, ObjectStoreError> {
-        let creds = Credentials::new(None, None, None, None, None).map_err(|e| {
-            ObjectStoreError::Initialization {
-                source: Box::new(e),
-                is_retriable: false,
-            }
-        })?;
-        let region = parse_region(endpoint.as_ref(), &region)?;
-        let bucket =
-            S3Bucket::new(bucket.as_str(), region.clone(), creds.clone()).map_err(|e| {
-                ObjectStoreError::Other {
-                    source: Box::new(e),
-                    is_retriable: false,
-                }
-            })?;
+        let mut s3_builder = AmazonS3Builder::from_env()
+            .with_region(region)
+            .with_bucket_name(bucket);
+        if let Some(endpoint) = endpoint {
+            s3_builder = s3_builder.with_endpoint(endpoint);
+        }
 
-        Ok(Self { bucket })
+        Ok(Self {
+            s3: s3_builder.build().map_err(|e| ObjectStoreError::from(e))?,
+        })
     }
 }
 
-impl From<S3Error> for ObjectStoreError {
-    fn from(e: S3Error) -> Self {
+impl From<object_store::Error> for ObjectStoreError {
+    fn from(e: object_store::Error) -> Self {
         match e {
-            S3Error::Credentials(_) | S3Error::Region(_) => ObjectStoreError::Initialization {
-                source: Box::new(e),
+            object_store::Error::Generic { source, .. } => ObjectStoreError::Other {
+                source,
                 is_retriable: false,
             },
-
-            S3Error::Utf8(_)
-            | S3Error::MaxExpiry(_)
-            | S3Error::HttpFailWithBody(_, _)
-            | S3Error::HttpFail
-            | S3Error::HmacInvalidLength(_)
-            | S3Error::UrlParse(_)
-            | S3Error::NativeTls(_)
-            | S3Error::HeaderToStr(_)
-            | S3Error::FromUtf8(_)
-            | S3Error::SerdeXml(_)
-            | S3Error::InvalidHeaderValue(_)
-            | S3Error::InvalidHeaderName(_)
-            | S3Error::WLCredentials
-            | S3Error::RLCredentials
-            | S3Error::TimeFormatError(_)
-            | S3Error::FmtError(_)
-            | S3Error::PostPolicyError(_)
-            | S3Error::CredentialsReadLock
-            | S3Error::CredentialsWriteLock => ObjectStoreError::Other {
-                source: Box::new(e),
+            object_store::Error::NotFound { source, .. } => ObjectStoreError::KeyNotFound(source),
+            object_store::Error::InvalidPath { source } => ObjectStoreError::Other {
+                source: Box::new(source),
                 is_retriable: false,
             },
-            S3Error::SerdeError(serde_err) => ObjectStoreError::Serialization(Box::new(serde_err)),
-            S3Error::Http(e) => ObjectStoreError::Other {
-                source: Box::new(e),
+            object_store::Error::JoinError { source } => ObjectStoreError::Other {
+                source: Box::new(source),
                 is_retriable: false,
             },
-            S3Error::Io(e) => ObjectStoreError::Other {
-                source: Box::new(e),
-                is_retriable: true,
+            object_store::Error::NotSupported { source }
+            | object_store::Error::AlreadyExists { source, .. }
+            | object_store::Error::Precondition { source, .. }
+            | object_store::Error::Unauthenticated { source, .. }
+            | object_store::Error::NotModified { source, .. } => ObjectStoreError::Other {
+                source,
+                is_retriable: false,
             },
-            S3Error::Hyper(e) => {
-                let is_retriable = e.is_timeout();
-                ObjectStoreError::Other {
-                    source: Box::new(e),
-                    is_retriable,
+            object_store::Error::NotImplemented => ObjectStoreError::Other {
+                source: Box::from("unimplemented"),
+                is_retriable: false,
+            },
+            object_store::Error::PermissionDenied { path, .. } => ObjectStoreError::Other {
+                source: Box::from(format!("access denied to `{path}`")),
+                is_retriable: false,
+            },
+            object_store::Error::UnknownConfigurationKey { key, .. } => {
+                ObjectStoreError::Initialization {
+                    source: Box::from(format!("key `{key}` unknown")),
+                    is_retriable: false,
                 }
             }
             _ => todo!(),
@@ -136,11 +107,16 @@ fn qualifed_key(bucket: &Bucket, key: &str) -> String {
 #[async_trait]
 impl ObjectStore for S3Store {
     async fn get_raw(&self, bucket: Bucket, key: &str) -> Result<Vec<u8>, ObjectStoreError> {
-        self.bucket
-            .get_object(qualifed_key(&bucket, key))
+        tracing::trace!("Fetching data to S3 for key {key} from bucket {bucket}");
+        Ok(self
+            .s3
+            .get(&Path::from(qualifed_key(&bucket, key)))
             .await
-            .map(|r| r.to_vec())
-            .map_err(ObjectStoreError::from)
+            .map_err(ObjectStoreError::from)?
+            .bytes()
+            .await
+            .map_err(ObjectStoreError::from)?
+            .to_vec())
     }
 
     async fn put_raw(
@@ -150,23 +126,23 @@ impl ObjectStore for S3Store {
         value: Vec<u8>,
     ) -> Result<(), ObjectStoreError> {
         tracing::trace!("Storing data to S3 for key {key} from bucket {bucket}");
-        self.bucket
-            .put_object(qualifed_key(&bucket, key), &value)
+        self.s3
+            .put(&Path::from(qualifed_key(&bucket, key)), value.into())
             .await
             .map(|_| ())
             .map_err(ObjectStoreError::from)
     }
 
     async fn remove_raw(&self, bucket: Bucket, key: &str) -> Result<(), ObjectStoreError> {
-        self.bucket
-            .delete_object(qualifed_key(&bucket, key))
+        self.s3
+            .delete(&Path::from(qualifed_key(&bucket, key)))
             .await
             .map(|_| ())
             .map_err(ObjectStoreError::from)
     }
 
     fn storage_prefix_raw(&self, _bucket: Bucket) -> String {
-        self.bucket.url()
+        unimplemented!()
     }
 
     async fn prepare_download(
@@ -175,17 +151,18 @@ impl ObjectStore for S3Store {
         key: &str,
     ) -> Result<PreparedLink, ObjectStoreError> {
         let url = self
-            .bucket
-            .presign_get(
-                qualifed_key(&bucket, key),
-                (60 * PREPARED_LINKS_EXPIRATION).try_into().unwrap(),
-                None,
+            .s3
+            .signed_url(
+                Method::GET,
+                &Path::from(qualifed_key(&bucket, key)),
+                std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
             )
             .await
             .map_err(|e| ObjectStoreError::Other {
                 source: Box::new(e),
                 is_retriable: false,
-            })?;
+            })?
+            .to_string();
         Ok(PreparedLink::Url(url))
     }
 
@@ -195,18 +172,18 @@ impl ObjectStore for S3Store {
         key: &str,
     ) -> Result<PreparedLink, ObjectStoreError> {
         let url = self
-            .bucket
-            .presign_put(
-                qualifed_key(&bucket, key),
-                (60 * PREPARED_LINKS_EXPIRATION).try_into().unwrap(),
-                None,
-                None,
+            .s3
+            .signed_url(
+                Method::PUT,
+                &Path::from(qualifed_key(&bucket, key)),
+                std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
             )
             .await
             .map_err(|e| ObjectStoreError::Other {
                 source: Box::new(e),
                 is_retriable: false,
-            })?;
+            })?
+            .to_string();
         Ok(PreparedLink::Url(url))
     }
 }

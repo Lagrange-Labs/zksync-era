@@ -118,11 +118,7 @@ impl ObjectStoreFactory {
                 bucket,
             } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
-                    S3Store::from_env(
-                        endpoint.clone(),
-                        bucket.to_owned().into(),
-                        region.to_owned(),
-                    )
+                    S3Store::from_env(endpoint.clone(), bucket, region)
                 })
                 .await?;
                 Self::wrap_mirroring(store, config.local_mirror_path.as_ref()).await
@@ -135,13 +131,7 @@ impl ObjectStoreFactory {
                 secret_key,
             } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
-                    S3Store::from_keys(
-                        endpoint.clone(),
-                        region.to_owned(),
-                        bucket.to_owned().into(),
-                        &access_key,
-                        &secret_key,
-                    )
+                    S3Store::from_keys(endpoint.clone(), region, bucket, &access_key, &secret_key)
                 })
                 .await?;
                 Self::wrap_mirroring(store, config.local_mirror_path.as_ref()).await
