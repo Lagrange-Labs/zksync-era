@@ -2,6 +2,9 @@ use std::{error, fmt};
 
 use async_trait::async_trait;
 
+/// How long, in minutes, should prepared links live for.
+pub const PREPARED_LINKS_EXPIRATION: u64 = 10;
+
 /// Bucket for [`ObjectStore`] in which objects can be placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -121,6 +124,16 @@ impl error::Error for ObjectStoreError {
     }
 }
 
+/// A link to an object in the backing store that is accessible without
+/// authentication.
+#[derive(Debug, Clone)]
+pub enum PreparedLink {
+    /// An HTTP URL
+    Url(String),
+    /// An URI on the local filesystem
+    Local(String),
+}
+
 /// Functionality to fetch and store byte blobs from an object store (AWS S3, Google Cloud Storage,
 /// Azure Blobstore etc).
 ///
@@ -156,6 +169,28 @@ pub trait ObjectStore: 'static + fmt::Debug + Send + Sync {
     ///
     /// Returns an error if removal fails.
     async fn remove_raw(&self, bucket: Bucket, key: &str) -> Result<(), ObjectStoreError>;
+
+    /// Generate a [`PreparedLink`] to download the given key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link generation fails.
+    async fn prepare_download(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError>;
+
+    /// Generate a [`PreparedLink`] to upload to the given key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link generation fails.
+    async fn prepare_upload(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError>;
 
     fn storage_prefix_raw(&self, bucket: Bucket) -> String;
 }

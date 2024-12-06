@@ -15,10 +15,11 @@ use google_cloud_storage::{
         },
         Error as HttpError,
     },
+    sign::{SignedURLMethod, SignedURLOptions},
 };
 use http::StatusCode;
 
-use crate::raw::{Bucket, ObjectStore, ObjectStoreError};
+use crate::raw::{Bucket, ObjectStore, ObjectStoreError, PreparedLink, PREPARED_LINKS_EXPIRATION};
 
 /// [`ObjectStore`] implementation based on GCS.
 pub struct GoogleCloudStore {
@@ -213,6 +214,59 @@ impl ObjectStore for GoogleCloudStore {
         };
         self.client.delete_object(&request).await?;
         Ok(())
+    }
+
+    async fn prepare_download(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError> {
+        let filename = Self::filename(bucket.as_str(), key);
+        let url = self
+            .client
+            .signed_url(
+                &self.bucket_prefix,
+                &filename,
+                None,
+                None,
+                SignedURLOptions {
+                    expires: std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: false,
+            })?;
+        Ok(PreparedLink::Url(url))
+    }
+
+    async fn prepare_upload(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError> {
+        let filename = Self::filename(bucket.as_str(), key);
+        let url = self
+            .client
+            .signed_url(
+                &self.bucket_prefix,
+                &filename,
+                None,
+                None,
+                SignedURLOptions {
+                    expires: std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                    method: SignedURLMethod::PUT,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: false,
+            })?;
+        Ok(PreparedLink::Url(url))
     }
 
     fn storage_prefix_raw(&self, bucket: Bucket) -> String {

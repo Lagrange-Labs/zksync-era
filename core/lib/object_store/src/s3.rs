@@ -3,6 +3,7 @@ use s3::creds::Credentials;
 use s3::error::S3Error;
 use s3::{bucket::Bucket as S3Bucket, Region};
 
+use crate::raw::{PreparedLink, PREPARED_LINKS_EXPIRATION};
 use crate::{Bucket, ObjectStore, ObjectStoreError};
 
 #[derive(Debug)]
@@ -143,5 +144,46 @@ impl ObjectStore for S3Store {
 
     fn storage_prefix_raw(&self, _bucket: Bucket) -> String {
         self.bucket.url()
+    }
+
+    async fn prepare_download(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError> {
+        let url = self
+            .bucket
+            .presign_get(
+                qualifed_key(&bucket, key),
+                (60 * PREPARED_LINKS_EXPIRATION).try_into().unwrap(),
+                None,
+            )
+            .await
+            .map_err(|e| ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: false,
+            })?;
+        Ok(PreparedLink::Url(url))
+    }
+
+    async fn prepare_upload(
+        &self,
+        bucket: Bucket,
+        key: &str,
+    ) -> Result<PreparedLink, ObjectStoreError> {
+        let url = self
+            .bucket
+            .presign_put(
+                qualifed_key(&bucket, key),
+                (60 * PREPARED_LINKS_EXPIRATION).try_into().unwrap(),
+                None,
+                None,
+            )
+            .await
+            .map_err(|e| ObjectStoreError::Other {
+                source: Box::new(e),
+                is_retriable: false,
+            })?;
+        Ok(PreparedLink::Url(url))
     }
 }
