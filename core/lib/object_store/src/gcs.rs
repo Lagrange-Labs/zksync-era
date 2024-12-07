@@ -19,12 +19,13 @@ use google_cloud_storage::{
 };
 use http::StatusCode;
 
-use crate::raw::{Bucket, ObjectStore, ObjectStoreError, PreparedLink, PREPARED_LINKS_EXPIRATION};
+use crate::raw::{Bucket, ObjectStore, ObjectStoreError, PreparedLink};
 
 /// [`ObjectStore`] implementation based on GCS.
 pub struct GoogleCloudStore {
     bucket_prefix: String,
     client: Client,
+    prepared_links_lifetime: u64,
 }
 
 impl fmt::Debug for GoogleCloudStore {
@@ -58,11 +59,13 @@ impl GoogleCloudStore {
     pub async fn new(
         auth_mode: GoogleCloudStoreAuthMode,
         bucket_prefix: String,
+        prepared_links_lifetime: u64,
     ) -> Result<Self, ObjectStoreError> {
         let client_config = Self::get_client_config(auth_mode.clone()).await?;
         Ok(Self {
             client: Client::new(client_config),
             bucket_prefix,
+            prepared_links_lifetime,
         })
     }
 
@@ -230,7 +233,7 @@ impl ObjectStore for GoogleCloudStore {
                 None,
                 None,
                 SignedURLOptions {
-                    expires: std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                    expires: std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
                     ..Default::default()
                 },
             )
@@ -256,7 +259,7 @@ impl ObjectStore for GoogleCloudStore {
                 None,
                 None,
                 SignedURLOptions {
-                    expires: std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                    expires: std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
                     method: SignedURLMethod::PUT,
                     ..Default::default()
                 },

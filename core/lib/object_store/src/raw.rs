@@ -2,8 +2,9 @@ use std::{error, fmt};
 
 use async_trait::async_trait;
 
-/// How long, in minutes, should prepared links live for.
-pub const PREPARED_LINKS_EXPIRATION: u64 = 10;
+/// How long, in minutes, should prepared links live for if not explicitely
+/// specified in the config.
+pub const DEFAULT_PREPARED_LINKS_EXPIRATION: u32 = 60;
 
 /// Bucket for [`ObjectStore`] in which objects can be placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

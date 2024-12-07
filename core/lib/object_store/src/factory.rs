@@ -8,7 +8,7 @@ use crate::{
     file::FileBackedObjectStore,
     gcs::{GoogleCloudStore, GoogleCloudStoreAuthMode},
     mirror::MirroringObjectStore,
-    raw::{ObjectStore, ObjectStoreError},
+    raw::{ObjectStore, ObjectStoreError, DEFAULT_PREPARED_LINKS_EXPIRATION},
     retries::StoreWithRetries,
     S3Store,
 };
@@ -62,12 +62,18 @@ impl ObjectStoreFactory {
         config: &ObjectStoreConfig,
     ) -> Result<Arc<dyn ObjectStore>, ObjectStoreError> {
         tracing::trace!("Initializing object store with configuration {config:?}");
+        let prepared_links_lifetime = config
+            .prepared_links_expiration_mins
+            .unwrap_or(DEFAULT_PREPARED_LINKS_EXPIRATION)
+            as u64;
+
         match &config.mode {
             ObjectStoreMode::GCS { bucket_base_url } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
                     GoogleCloudStore::new(
                         GoogleCloudStoreAuthMode::Authenticated,
                         bucket_base_url.clone(),
+                        prepared_links_lifetime,
                     )
                 })
                 .await?;
@@ -83,6 +89,7 @@ impl ObjectStoreFactory {
                             gcs_credential_file_path.clone(),
                         ),
                         bucket_base_url.clone(),
+                        prepared_links_lifetime,
                     )
                 })
                 .await?;
@@ -93,6 +100,7 @@ impl ObjectStoreFactory {
                     GoogleCloudStore::new(
                         GoogleCloudStoreAuthMode::Anonymous,
                         bucket_base_url.clone(),
+                        prepared_links_lifetime,
                     )
                 })
                 .await?;
@@ -118,7 +126,7 @@ impl ObjectStoreFactory {
                 bucket,
             } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
-                    S3Store::from_env(endpoint.clone(), bucket, region)
+                    S3Store::from_env(prepared_links_lifetime, endpoint.clone(), bucket, region)
                 })
                 .await?;
                 Self::wrap_mirroring(store, config.local_mirror_path.as_ref()).await
@@ -131,7 +139,14 @@ impl ObjectStoreFactory {
                 secret_key,
             } => {
                 let store = StoreWithRetries::try_new(config.max_retries, || {
-                    S3Store::from_keys(endpoint.clone(), region, bucket, &access_key, &secret_key)
+                    S3Store::from_keys(
+                        prepared_links_lifetime,
+                        endpoint.clone(),
+                        region,
+                        bucket,
+                        &access_key,
+                        &secret_key,
+                    )
                 })
                 .await?;
                 Self::wrap_mirroring(store, config.local_mirror_path.as_ref()).await

@@ -42,6 +42,8 @@ message ObjectStore {
     S3Env s3_env = 7;
     S3Credentials s3_credentials = 8;
   }
+
   optional uint32 max_retries = 5; // required
   optional string local_mirror_path = 6; // optional; fs path
+  optional uint32 prepared_links_expiration_mins = 9; // required
 }

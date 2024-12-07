@@ -57,6 +57,7 @@ impl ProtoRepr for proto::ObjectStore {
                 .and_then(|x| Ok((*x).try_into()?))
                 .context("max_retries")?,
             local_mirror_path: self.local_mirror_path.clone(),
+            prepared_links_expiration_mins: self.prepared_links_expiration_mins,
         })
     }
 
@@ -116,6 +117,7 @@ impl ProtoRepr for proto::ObjectStore {
             mode: Some(mode),
             max_retries: Some(this.max_retries.into()),
             local_mirror_path: this.local_mirror_path.clone(),
+            prepared_links_expiration_mins: this.prepared_links_expiration_mins,
         }
     }
 }

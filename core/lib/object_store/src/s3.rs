@@ -1,4 +1,4 @@
-use crate::raw::{PreparedLink, PREPARED_LINKS_EXPIRATION};
+use crate::raw::PreparedLink;
 use crate::{Bucket, ObjectStore, ObjectStoreError};
 use async_trait::async_trait;
 use http::Method;
@@ -12,11 +12,13 @@ use object_store::{
 #[derive(Debug)]
 pub struct S3Store {
     s3: AmazonS3,
+    prepared_links_lifetime: u64,
 }
 
 impl S3Store {
     /// Initialize and S3-backed [`ObjectStore`] from the provided credentials.
     pub async fn from_keys(
+        prepared_links_lifetime: u64,
         endpoint: Option<String>,
         region: &str,
         bucket: &str,
@@ -34,12 +36,14 @@ impl S3Store {
 
         Ok(Self {
             s3: s3_builder.build().map_err(|e| ObjectStoreError::from(e))?,
+            prepared_links_lifetime,
         })
     }
 
     /// Initialize an S3-backed [`ObjectStore`] from the credentials stored in
     /// `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
     pub async fn from_env(
+        prepared_links_lifetime: u64,
         endpoint: Option<String>,
         region: &str,
         bucket: &str,
@@ -53,6 +57,7 @@ impl S3Store {
 
         Ok(Self {
             s3: s3_builder.build().map_err(|e| ObjectStoreError::from(e))?,
+            prepared_links_lifetime,
         })
     }
 }
@@ -155,7 +160,7 @@ impl ObjectStore for S3Store {
             .signed_url(
                 Method::GET,
                 &Path::from(qualifed_key(&bucket, key)),
-                std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
             )
             .await
             .map_err(|e| ObjectStoreError::Other {
@@ -176,7 +181,7 @@ impl ObjectStore for S3Store {
             .signed_url(
                 Method::PUT,
                 &Path::from(qualifed_key(&bucket, key)),
-                std::time::Duration::from_secs(60 * PREPARED_LINKS_EXPIRATION),
+                std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
             )
             .await
             .map_err(|e| ObjectStoreError::Other {
