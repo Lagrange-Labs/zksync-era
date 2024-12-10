@@ -195,6 +195,7 @@ in
 
   packages = [
     pkgs.git pkgs.rustup pkgs.openssl.dev pkgs.pkg-config
+    pkgs.clang pkgs.libclang pkgs.llvmPackages.libcxxClang
     pkgs.pspg
   ]
   ++ lib.optionals pkgs.stdenv.targetPlatform.isDarwin [
@@ -206,6 +207,8 @@ in
     OPENSSL_DEV = pkgs.openssl.dev;
     ZKSYNC_USE_CUDA_STUBS = "true";
     PSQL_PAGER = "pspg -X -b";
+    LIBCLANG_PATH="${pkgs.libclang.lib}/lib";
+    BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.llvmPackages.libcxxClang}/lib/clang/${lib.getVersion pkgs.clang}/include";
   };
 
   scripts = {
