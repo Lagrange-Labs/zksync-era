@@ -195,6 +195,7 @@ in
 
   packages = [
     pkgs.git pkgs.rustup pkgs.openssl.dev pkgs.pkg-config
+    pkgs.clang pkgs.libclang pkgs.llvmPackages.libcxxClang
     pkgs.pspg
   ]
   ++ lib.optionals pkgs.stdenv.targetPlatform.isDarwin [
@@ -206,9 +207,14 @@ in
     OPENSSL_DEV = pkgs.openssl.dev;
     ZKSYNC_USE_CUDA_STUBS = "true";
     PSQL_PAGER = "pspg -X -b";
+    LIBCLANG_PATH="${pkgs.libclang.lib}/lib";
+    BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.llvmPackages.libcxxClang}/lib/clang/${lib.getVersion pkgs.clang}/include";
   };
 
-  scripts = {
+  scripts = let
+    call-db = "psql -U ${db.user} -d ${db.name} -p ${toString db.port}";
+  in
+    {
     # Display the general config file location
     yaml-config.exec = "echo ${general-config-file}";
 
@@ -219,11 +225,29 @@ in
     reset-db.exec = "rm -rf ${config.env.DEVENV_STATE}/postgres";
 
     # Open a shell to the DB
-    db.exec = "psql -U ${db.user} -d ${db.name} -p ${toString db.port}";
-  };
+    db.exec = call-db;
 
-  tasks = {
-    "prover:init" = {
+    witnesses-ls = {
+      description = "Show the status of all the inserted batches.";
+      exec = "${call-db} -c \"SELECT l1_batch_number, attempts, status, error, picked_by FROM witness_inputs_fri;\"";
+    };
+
+    witnesses-reset = {
+      description = "Reset all the 'in_progress' input witnesses to the 'queued' status.";
+      exec = "${call-db} -c \"UPDATE witness_inputs_fri SET status = 'queued', picked_by = '' WHERE status = 'in_progress';\"";
+    };
+
+    witnesses-purge = {
+      description = "Remove all the 'queued' witnesses.";
+      exec = "${call-db} -c \"DELETE FROM witness_inputs_fri WHERE status = 'queued';\"";
+    };
+
+    wg.exec = ''
+    cargo run --release --manifest-path=prover/Cargo.toml --bin=zksync_witness_generator -- \
+    --round=basic_circuits --config-path=${general-config-file} --secrets-path=${secrets-config-file}
+    '';
+
+    prover-init = {
       description = "Insert the metadata related to the given ZKstack version in the DB.";
       exec = ''
       cargo run --bin prover_cli --manifest-path prover/Cargo.toml -- \
@@ -232,6 +256,24 @@ in
         --version ${meta.zksync-version.minor} --patch ${meta.zksync-version.patch} \
         --snark-wrapper=0x14f97b81e54b35fe673d8708cc1a19e1ea5b5e348e12d31e39824ed4f42bbca2''
       ;
+    };
+
+    insert-batch = {
+      description = "Insert the batch with the given number in the system. The file 'witness_inputs_<NUM>.bin' must be present.";
+      exec = ''
+      set -e
+
+      BIN_FILE=witness_inputs_$1.bin
+      [[ -f $BIN_FILE ]] || echo  "$BIN_FILE not found"
+      echo "Uploading $BIN_FILE to S3"
+      mc put $BIN_FILE local/${s3.bucket}/witness_inputs/$BIN_FILE
+      echo "Inserting batch $1 in the DB"
+      cargo run --bin prover_cli --manifest-path prover/Cargo.toml -- \
+      ${db-url} 1 \
+      insert-batch \
+        --version ${meta.zksync-version.minor} --patch ${meta.zksync-version.patch} \
+        --number $1
+      '';
     };
   };
 
@@ -256,6 +298,14 @@ in
         }
       ];
     };
+
+    minio = {
+      enable = true;
+      accessKey = s3.access-key;
+      secretKey = s3.secret-key;
+      region = s3.region;
+      buckets = [ "mon-gros-bucket" ];
+    };
   };
 
   processes = {
@@ -267,7 +317,7 @@ in
     };
 
     witness-generator = {
-      exec = ''
+     exec = ''
       cargo run --release --manifest-path=prover/Cargo.toml --bin=zksync_witness_generator -- \
       --round=basic_circuits --config-path=${general-config-file} --secrets-path=${secrets-config-file}
       '';
