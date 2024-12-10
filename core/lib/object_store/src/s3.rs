@@ -25,13 +25,15 @@ impl S3Store {
         access_key: &str,
         secret_key: &str,
     ) -> Result<Self, ObjectStoreError> {
+        tracing::info!("Initializing S3 store from environment given keys");
+
         let mut s3_builder = AmazonS3Builder::new()
             .with_region(region)
             .with_bucket_name(bucket)
             .with_access_key_id(access_key)
             .with_secret_access_key(secret_key);
         if let Some(endpoint) = endpoint {
-            s3_builder = s3_builder.with_endpoint(endpoint);
+            s3_builder = s3_builder.with_endpoint(endpoint).with_allow_http(true);
         }
 
         Ok(Self {
@@ -48,11 +50,13 @@ impl S3Store {
         region: &str,
         bucket: &str,
     ) -> Result<Self, ObjectStoreError> {
+        tracing::info!("Initializing S3 store from environment variables");
+
         let mut s3_builder = AmazonS3Builder::from_env()
             .with_region(region)
             .with_bucket_name(bucket);
         if let Some(endpoint) = endpoint {
-            s3_builder = s3_builder.with_endpoint(endpoint);
+            s3_builder = s3_builder.with_endpoint(endpoint).with_allow_http(true);
         }
 
         Ok(Self {
