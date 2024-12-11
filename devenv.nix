@@ -6,6 +6,7 @@ let
       minor = "25";
       patch = "0";
     };
+    minio-port = 11700;
   };
 
   # PgSQL settings
@@ -21,7 +22,7 @@ let
   # S3/Minio settings
   s3 = {
     bucket = "mon-gros-bucket";
-    endpoint = "http://localhost:9000";
+    endpoint = "http://localhost:${toString meta.minio-port}";
     region = "us-east-2";
     access-key = "majolieclef";
     secret-key = "grossecret";
@@ -305,6 +306,8 @@ in
       secretKey = s3.secret-key;
       region = s3.region;
       buckets = [ "mon-gros-bucket" ];
+      listenAddress = "127.0.0.1:${toString meta.minio-port}";
+      browser = false;
     };
   };
 
