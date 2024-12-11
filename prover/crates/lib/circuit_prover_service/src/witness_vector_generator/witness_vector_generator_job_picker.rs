@@ -55,7 +55,7 @@ impl<ML: WitnessVectorMetadataLoader> WitnessVectorGeneratorJobPicker<ML> {
     /// Hydrates job data with witness information which is stored separately.
     /// This is done in order to save RAM & storage.
     // TODO: Once new BWG is done, this won't be necessary.
-    async fn fill_witness(
+    pub async fn fill_witness(
         &self,
         circuit: ZkSyncBaseLayerCircuit,
         aux_data: CircuitAuxData,

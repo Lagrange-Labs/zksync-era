@@ -3,5 +3,5 @@
 mod gpu_circuit_prover;
 pub mod job_runner;
 mod metrics;
-mod types;
-mod witness_vector_generator;
+pub mod types;
+pub mod witness_vector_generator;
