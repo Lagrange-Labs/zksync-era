@@ -7,6 +7,7 @@ let
       patch = "0";
     };
     minio-port = 11700;
+    compression-iterations = 2;
   };
 
   # PgSQL settings
@@ -323,6 +324,13 @@ in
      exec = ''
       cargo run --release --manifest-path=prover/Cargo.toml --bin=zksync_witness_generator -- \
       --round=basic_circuits --config-path=${general-config-file} --secrets-path=${secrets-config-file}
+      '';
+    };
+
+    proof-compressor = {
+     exec = ''
+      cargo run --release --manifest-path=prover/Cargo.toml --bin=zksync_proof_fri_compressor -- \
+      -n=${toString meta.compression-iterations} --config-path=${general-config-file} --secrets-path=${secrets-config-file}
       '';
     };
   };
