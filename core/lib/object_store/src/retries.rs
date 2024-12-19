@@ -135,16 +135,18 @@ impl<S: ObjectStore> ObjectStore for StoreWithRetries<S> {
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
-        self.inner.prepare_download(bucket, key).await
+        self.inner.prepare_download(bucket, key, ttl_secs).await
     }
 
     async fn prepare_upload(
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
-        self.inner.prepare_upload(bucket, key).await
+        self.inner.prepare_upload(bucket, key, ttl_secs).await
     }
 }
 

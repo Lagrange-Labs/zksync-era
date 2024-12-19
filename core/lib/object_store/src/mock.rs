@@ -62,6 +62,7 @@ impl ObjectStore for MockObjectStore {
         &self,
         _bucket: Bucket,
         _key: &str,
+        _ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         unimplemented!()
     }
@@ -70,6 +71,7 @@ impl ObjectStore for MockObjectStore {
         &self,
         _bucket: Bucket,
         _key: &str,
+        _ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         unimplemented!()
     }

@@ -25,7 +25,6 @@ use crate::raw::{Bucket, ObjectStore, ObjectStoreError, PreparedLink};
 pub struct GoogleCloudStore {
     bucket_prefix: String,
     client: Client,
-    prepared_links_lifetime: u64,
 }
 
 impl fmt::Debug for GoogleCloudStore {
@@ -59,13 +58,11 @@ impl GoogleCloudStore {
     pub async fn new(
         auth_mode: GoogleCloudStoreAuthMode,
         bucket_prefix: String,
-        prepared_links_lifetime: u64,
     ) -> Result<Self, ObjectStoreError> {
         let client_config = Self::get_client_config(auth_mode.clone()).await?;
         Ok(Self {
             client: Client::new(client_config),
             bucket_prefix,
-            prepared_links_lifetime,
         })
     }
 
@@ -223,6 +220,7 @@ impl ObjectStore for GoogleCloudStore {
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         let filename = Self::filename(bucket.as_str(), key);
         let url = self
@@ -233,7 +231,7 @@ impl ObjectStore for GoogleCloudStore {
                 None,
                 None,
                 SignedURLOptions {
-                    expires: std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
+                    expires: std::time::Duration::from_secs(ttl_secs),
                     ..Default::default()
                 },
             )
@@ -249,6 +247,7 @@ impl ObjectStore for GoogleCloudStore {
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         let filename = Self::filename(bucket.as_str(), key);
         let url = self
@@ -259,7 +258,7 @@ impl ObjectStore for GoogleCloudStore {
                 None,
                 None,
                 SignedURLOptions {
-                    expires: std::time::Duration::from_secs(60 * self.prepared_links_lifetime),
+                    expires: std::time::Duration::from_secs(ttl_secs),
                     method: SignedURLMethod::PUT,
                     ..Default::default()
                 },

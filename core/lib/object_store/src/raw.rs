@@ -2,10 +2,6 @@ use std::{error, fmt};
 
 use async_trait::async_trait;
 
-/// How long, in minutes, should prepared links live for if not explicitely
-/// specified in the config.
-pub const DEFAULT_PREPARED_LINKS_EXPIRATION: u32 = 60;
-
 /// Bucket for [`ObjectStore`] in which objects can be placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -195,6 +191,7 @@ pub trait ObjectStore: 'static + fmt::Debug + Send + Sync {
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError>;
 
     /// Generate a [`PreparedLink`] to upload to the given key.
@@ -206,6 +203,7 @@ pub trait ObjectStore: 'static + fmt::Debug + Send + Sync {
         &self,
         bucket: Bucket,
         key: &str,
+        ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError>;
 
     fn storage_prefix_raw(&self, bucket: Bucket) -> String;

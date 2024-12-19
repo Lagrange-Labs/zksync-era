@@ -85,6 +85,7 @@ impl ObjectStore for FileBackedObjectStore {
         &self,
         bucket: Bucket,
         key: &str,
+        _ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         Ok(PreparedLink::Local(self.filename(bucket, key)))
     }
@@ -93,6 +94,7 @@ impl ObjectStore for FileBackedObjectStore {
         &self,
         bucket: Bucket,
         key: &str,
+        _ttl_secs: u64,
     ) -> Result<PreparedLink, ObjectStoreError> {
         Ok(PreparedLink::Local(self.filename(bucket, key)))
     }
